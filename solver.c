@@ -4,7 +4,7 @@
 #include <math.h>
 
 #define NP 200 //number of atoms
-#define NT 2000 //# of steps
+#define NT 1000 //# of steps
 const double m=40.0*1.66053892173; //mass of each atom (1E-27kg)
 const double dt = 1.0;//1E-15(s)
 const double L = 40.0;//1E-10(m)
@@ -50,7 +50,6 @@ void Load(double *x, double *y, double *vx, double *vy){
 	fclose(sheet);
 }
 
-
 void CalcTemp(int k, double *T, double vx[NP], double vy[NP]){
 	int i=0.0;
 	double Ek=0.0;
@@ -73,6 +72,7 @@ void CalcMomentum(int k, double *P, double *H, double x[NP], double y[NP], doubl
 	P[k] = m*sqrt(vxsum*vxsum + vysum*vysum);
 	H[k] = m*rotsum;
 }
+
 void CalcEnergy(int k, double *U, double x[NP], double y[NP]){
 	int i=0, j=0;
 	double rx=0.0, ry=0.0;
@@ -98,6 +98,7 @@ void CalcEnergy(int k, double *U, double x[NP], double y[NP]){
 		}
 	}
 }
+
 void CalcForce(double *Fx, double *Fy, double x[NP], double y[NP]){
 	int i=0, j=0;
 	double rx=0.0, ry=0.0;
@@ -133,7 +134,91 @@ void CalcForce(double *Fx, double *Fy, double x[NP], double y[NP]){
 	}
 }
 
+void Move(double *x, double *vx, double *x2, double *x3, double *x4, double *x5, double *y, double *vy, double *y2, double *y3, double *y4, double *y5, double *Fx, double *Fy){
 
+    double corx[NP], cory[NP]; //correctors in x & y direction
+    int i=0;
+
+    for(i=0;i<NP;i++){
+        x2[i]=Fx[i]/m;
+        y2[i]=Fy[i]/m;
+    }
+    //predictor
+    for(i=0;i<NP;i++){
+        x[i] = x[i] + vx[i]*dt + x2[i]*dt*dt/2.0 + x3[i]*dt*dt*dt/6.0 + x4[i]*dt*dt*dt*dt/24.0 + x5[i]*dt*dt*dt*dt*dt/120.0;
+        vx[i] = vx[i] + x2[i]*dt + x3[i]*dt*dt/2.0 + x4[i]*dt*dt*dt/6.0 + x5[i]*dt*dt*dt*dt/24.0;
+        x2[i] = x2[i] + x3[i]*dt + x4[i]*dt*dt/2.0 + x5[i]*dt*dt*dt/6.0;
+        x3[i] = x3[i] + x4[i]*dt + x5[i]*dt*dt/2.0;
+        x4[i] = x4[i] + x5[i]*dt;
+        y[i] = y[i] + vy[i]*dt + y2[i]*dt*dt/2.0 + y3[i]*dt*dt*dt/6.0 + y4[i]*dt*dt*dt*dt/24.0 + y5[i]*dt*dt*dt*dt*dt/120.0;
+        vy[i] = vy[i] + y2[i]*dt + y3[i]*dt*dt/2.0 + y4[i]*dt*dt*dt/6.0 + y5[i]*dt*dt*dt*dt/24.0;
+        y2[i] = y2[i] + y3[i]*dt + y4[i]*dt*dt/2.0 + y5[i]*dt*dt*dt/6.0;
+        y3[i] = y3[i] + y4[i]*dt + y5[i]*dt*dt/2.0;
+        y4[i] = y4[i] + y5[i]*dt;
+    }
+    //corrector
+    CalcForce(Fx, Fy, x, y);
+    for(i=0;i<NP;i++){
+        corx[i] = (Fx[i]/m - x2[i])*dt*dt/2.0;
+        cory[i] = (Fy[i]/m - y2[i])*dt*dt/2.0;
+    }
+
+    //renew
+    for(i=0;i<NP;i++){
+        x[i] += a0*corx[i];
+        vx[i] += a1*corx[i]/dt;
+        x2[i] += a2*corx[i]*2.0/dt/dt;
+        x3[i] += a3*corx[i]*6.0/dt/dt/dt;
+        x4[i] += a4*corx[i]*24.0/dt/dt/dt/dt;
+        x5[i] += a5*corx[i]*120.0/dt/dt/dt/dt/dt;
+        y[i] += a0*cory[i];
+        vy[i] += a1*cory[i]/dt;
+        y2[i] += a2*cory[i]*2.0/dt/dt;
+        y3[i] += a3*cory[i]*6.0/dt/dt/dt;
+        y4[i] += a4*cory[i]*24.0/dt/dt/dt/dt;
+        y5[i] += a5*cory[i]*120.0/dt/dt/dt/dt/dt;
+    }
+
+    //Periodic boundary conditions
+    for(i=0;i<NP;i++){
+        while(x[i]>0.5*L){x[i]-=L;}
+        while(x[i]<-0.5*L){x[i]+=L;}
+        while(y[i]>0.5*L){y[i]-=L;}
+        while(y[i]<-0.5*L){y[i]+=L;}
+    }
+
+}
+
+void ExportResults(double T[NP], double U[NP], double P[NP], double H[NP]){
+
+	FILE *pFile;
+    int i=0;
+
+	//export temperature
+	pFile=fopen("Temperature.txt","w");
+	for(i=0;i<NT+1;i++){
+			fprintf(pFile,"%f\n", T[i]);
+	}
+	fclose(pFile);
+	//export potential energy
+	pFile=fopen("Potential.txt","w");
+	for(i=0;i<NT+1;i++){
+			fprintf(pFile,"%lE\n", U[i]);
+	}
+	fclose(pFile);
+	//export momentum
+	pFile=fopen("Momentum.txt","w");
+	for(i=0;i<NT+1;i++){
+			fprintf(pFile,"%lE\n", P[i]);
+	}
+	fclose(pFile);
+	//export angular momentum
+	pFile=fopen("AngMomentum.txt","w");
+	for(i=0;i<NT+1;i++){
+			fprintf(pFile,"%lE\n", H[i]);
+	}
+
+}
 
 int main(){
 
@@ -162,81 +247,11 @@ int main(){
 		CalcMomentum(k, P, H, x, y, vx, vy);
 		CalcEnergy(k, U, x, y);
 		CalcForce(Fx, Fy, x, y);
-		//Move(Predictor-Corrector)
-		for(i=0;i<NP;i++){
-			x2[i]=Fx[i]/m;
-			y2[i]=Fy[i]/m;
-		}
-		//predictor
-		for(i=0;i<NP;i++){
-			x[i] = x[i] + vx[i]*dt + x2[i]*dt*dt/2.0 + x3[i]*dt*dt*dt/6.0 + x4[i]*dt*dt*dt*dt/24.0 + x5[i]*dt*dt*dt*dt*dt/120.0;
-			vx[i] = vx[i] + x2[i]*dt + x3[i]*dt*dt/2.0 + x4[i]*dt*dt*dt/6.0 + x5[i]*dt*dt*dt*dt/24.0;
-			x2[i] = x2[i] + x3[i]*dt + x4[i]*dt*dt/2.0 + x5[i]*dt*dt*dt/6.0;
-			x3[i] = x3[i] + x4[i]*dt + x5[i]*dt*dt/2.0;
-			x4[i] = x4[i] + x5[i]*dt;
-			y[i] = y[i] + vy[i]*dt + y2[i]*dt*dt/2.0 + y3[i]*dt*dt*dt/6.0 + y4[i]*dt*dt*dt*dt/24.0 + y5[i]*dt*dt*dt*dt*dt/120.0;
-			vy[i] = vy[i] + y2[i]*dt + y3[i]*dt*dt/2.0 + y4[i]*dt*dt*dt/6.0 + y5[i]*dt*dt*dt*dt/24.0;
-			y2[i] = y2[i] + y3[i]*dt + y4[i]*dt*dt/2.0 + y5[i]*dt*dt*dt/6.0;
-			y3[i] = y3[i] + y4[i]*dt + y5[i]*dt*dt/2.0;
-			y4[i] = y4[i] + y5[i]*dt;
-		}
-		//corrector
-		CalcForce(Fx, Fy, x, y);
-		for(i=0;i<NP;i++){
-			corx[i] = (Fx[i]/m - x2[i])*dt*dt/2.0;
-			cory[i] = (Fy[i]/m - y2[i])*dt*dt/2.0;
-		}
-
-		//renew
-		for(i=0;i<NP;i++){
-			x[i] += a0*corx[i];
-			vx[i] += a1*corx[i]/dt;
-			x2[i] += a2*corx[i]*2.0/dt/dt;
-			x3[i] += a3*corx[i]*6.0/dt/dt/dt;
-			x4[i] += a4*corx[i]*24.0/dt/dt/dt/dt;
-			x5[i] += a5*corx[i]*120.0/dt/dt/dt/dt/dt;
-			y[i] += a0*cory[i];
-			vy[i] += a1*cory[i]/dt;
-			y2[i] += a2*cory[i]*2.0/dt/dt;
-			y3[i] += a3*cory[i]*6.0/dt/dt/dt;
-			y4[i] += a4*cory[i]*24.0/dt/dt/dt/dt;
-			y5[i] += a5*cory[i]*120.0/dt/dt/dt/dt/dt;
-		}
-
-		for(i=0;i<NP;i++){
-			while(x[i]>0.5*L){x[i]-=L;}
-			while(x[i]<-0.5*L){x[i]+=L;}
-			while(y[i]>0.5*L){y[i]-=L;}
-			while(y[i]<-0.5*L){y[i]+=L;}
-		}
+        Move(x, vx, x2, x3, x4, x5, y, vy, y2, y3, y4, y5, Fx, Fy);
 	}
 
-	//export temperature
-	FILE *pFile;
-	pFile=fopen("Temp.txt","w");
-	for(i=0;i<NT+1;i++){
-			fprintf(pFile,"%f\n", T[i]);
-	}
-	fclose(pFile);
-	//export potential energy
-	pFile=fopen("Potential.txt","w");
-	for(i=0;i<NT+1;i++){
-			fprintf(pFile,"%lE\n", U[i]);
-	}
-	fclose(pFile);
-	//export momentum
-	pFile=fopen("momentum.txt","w");
-	for(i=0;i<NT+1;i++){
-			fprintf(pFile,"%lE\n", P[i]);
-	}
-	fclose(pFile);
-	//export angular momentum
-	pFile=fopen("angmomentum.txt","w");
-	for(i=0;i<NT+1;i++){
-			fprintf(pFile,"%lE\n", H[i]);
-	}
+	ExportResults(T, U, P, H);
 
 	printf("Done!\n");
 	return 0;
-
 }
